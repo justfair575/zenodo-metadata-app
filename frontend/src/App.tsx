@@ -6,6 +6,8 @@ const API_URL = "http://localhost:8000";
 
 type ReviewStatus = "suggested" | "confirmed" | "rejected";
 
+type ReviewAction = "accept" | "edit" | "reject";
+
 type MetadataField = {
   suggested_value: unknown;
   value: unknown;
@@ -15,11 +17,25 @@ type MetadataField = {
   status: ReviewStatus;
 };
 
+type MetadataFieldName =
+    | "title"
+    | "description"
+    | "creators"
+    | "license"
+    | "date_published"
+    | "keywords"
+    | "dataset_type"
+    | "machine_learning_task"
+    | "data_modality"
+    | "language"
+    | "number_of_records";
+
 type Metadata = {
   title: MetadataField;
   description: MetadataField;
   creators: MetadataField;
   license: MetadataField;
+  date_published: MetadataField;
   keywords: MetadataField;
   dataset_type: MetadataField;
   machine_learning_task: MetadataField;
@@ -35,60 +51,61 @@ type DatasetCandidate = {
   path: string;
   size: number;
   extension: string;
-  confidence: string;
   sha?: string;
+  confidence: string;
 };
 
-type RepositoryResponse = {
-  repository: {
-    full_name: string;
-    url: string;
-    description: string | null;
-    default_branch: string;
-    selected_ref: string;
-    commit_sha: string;
-    license: string | null;
-  };
-  inventory: {
-    total_files: number;
-    metadata_files_found: number;
-    metadata_files_read: number;
-    dataset_candidates_found: number;
-    dataset_candidates_returned: number;
-  };
+type Repository = {
+  full_name: string;
+  url: string;
+  description: string | null;
+  default_branch: string;
+  selected_ref: string;
+  commit_sha: string;
+  license: string | null;
+};
+
+type Inventory = {
+  total_files: number;
+  metadata_files_found: number;
+  metadata_files_read: number;
+  dataset_candidates_found: number;
+  dataset_candidates_returned: number;
+};
+
+type AnalysisResult = {
+  repository: Repository;
+  inventory: Inventory;
   dataset_candidates: DatasetCandidate[];
   warnings: string[];
 };
 
-type ExtractionResponse = {
-  repository: RepositoryResponse["repository"];
-  inventory: RepositoryResponse["inventory"];
-  selected_dataset: {
-    path: string;
-    size: number;
-    format: string;
-    encoding: string;
-    delimiter: string;
-    number_of_records: number;
-    number_of_columns: number;
-    columns: {
-      name: string;
-      inferred_type: string;
-      missing_values: number;
-    }[];
-    sample_rows: Record<string, string>[];
-  };
+type DatasetInspection = {
+  path: string;
+  size: number;
+  format: string;
+  encoding: string;
+  delimiter: string;
+  number_of_records: number;
+  number_of_columns: number;
+  columns: {
+    name: string;
+    inferred_type: string;
+    missing_values: number;
+  }[];
+  sample_rows: Record<string, string>[];
+};
+
+type ExtractionResult = {
+  repository: Repository;
+  inventory: Inventory;
+  selected_dataset: DatasetInspection;
   metadata: Metadata;
   dataset_candidates: DatasetCandidate[];
   warnings: string[];
 };
 
-type FieldReview = {
-  action: "accept" | "edit" | "reject";
-  value?: unknown;
-};
-
-type ConfirmationResponse = {
+type ConfirmationResult = {
   metadata: Metadata;
   confirmed: boolean;
   pending_fields: string[];
@@ -96,78 +113,76 @@ type ConfirmationResponse = {
   can_generate_croissant: boolean;
 };
 
-const FIELD_CONFIG: {
-  key: keyof Pick<
-      Metadata,
-      | "title"
-      | "description"
-      | "creators"
-      | "license"
-      | "keywords"
-      | "dataset_type"
-      | "machine_learning_task"
-      | "data_modality"
-      | "language"
-      | "number_of_records"
-  >;
-  label: string;
-  required: boolean;
-  multiline?: boolean;
-  list?: boolean;
-}[] = [
-  { key: "title", label: "Título", required: true },
-  {
-    key: "description",
-    label: "Descrição",
-    required: true,
-    multiline: true,
-  },
-  {
-    key: "creators",
-    label: "Criadores",
-    required: true,
-    multiline: true,
-    list: true,
-  },
-  { key: "license", label: "Licença", required: true },
-  {
-    key: "keywords",
-    label: "Palavras-chave",
-    required: false,
-    multiline: true,
-    list: true,
-  },
-  { key: "dataset_type", label: "Tipo de dataset", required: true },
-  {
-    key: "machine_learning_task",
-    label: "Tarefa de Machine Learning",
-    required: false,
-  },
-  {
-    key: "data_modality",
-    label: "Modalidade dos dados",
-    required: true,
-  },
-  { key: "language", label: "Idioma", required: false },
-  {
-    key: "number_of_records",
-    label: "Número de registos",
-    required: false,
-  },
+type CroissantResult = {
+  filename: string;
+  format: string;
+  validated: boolean;
+  repository: string;
+  commit_sha: string;
+  selected_dataset: string;
+  croissant: Record<string, unknown>;
+};
+
+const REQUIRED_FIELDS: MetadataFieldName[] = [
+  "title",
+  "description",
+  "creators",
+  "license",
+  "date_published",
+  "dataset_type",
+  "data_modality",
 ];
 
-function getFieldText(value: unknown): string {
+const FIELD_LABELS: Record<MetadataFieldName, string> = {
+  title: "Título",
+  description: "Descrição",
+  creators: "Criadores",
+  license: "Licença",
+  date_published: "Data de publicação",
+  keywords: "Palavras-chave",
+  dataset_type: "Tipo de dataset",
+  machine_learning_task: "Tarefa de Machine Learning",
+  data_modality: "Modalidade dos dados",
+  language: "Idioma",
+  number_of_records: "Número de registos",
+};
+
+function getTodayDate(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function isEmpty(value: unknown): boolean {
   if (value === null || value === undefined) {
-    return "";
+    return true;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length === 0;
   }
 
   if (Array.isArray(value)) {
-    return value
-        .map((item) => {
-          if (typeof item === "string") return item;
-          return JSON.stringify(item);
-        })
-        .join("\n");
+    return value.length === 0;
+  }
+
+  if (typeof value === "object") {
+    return Object.keys(value).length === 0;
+  }
+
+  return false;
+}
+
+function displayValue(value: unknown): string {
+  if (isEmpty(value)) {
+    return "Não identificado";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join(", ");
   }
 
   if (typeof value === "object") {
@@ -177,73 +192,84 @@ function getFieldText(value: unknown): string {
   return String(value);
 }
 
-function parseFieldValue(
-    text: string,
-    field: (typeof FIELD_CONFIG)[number],
+function fieldToInput(
+    fieldName: MetadataFieldName,
+    value: unknown,
+): string {
+  if (isEmpty(value)) {
+    return "";
+  }
+
+  if (
+      (fieldName === "creators" || fieldName === "keywords") &&
+      Array.isArray(value)
+  ) {
+    return value.map((item) => String(item)).join("\n");
+  }
+
+  return typeof value === "string"
+      ? value
+      : JSON.stringify(value, null, 2);
+}
+
+function parseFieldInput(
+    fieldName: MetadataFieldName,
+    input: string,
 ): unknown {
-  if (field.list) {
-    return text
-        .split(/[\n,]/)
+  if (fieldName === "creators" || fieldName === "keywords") {
+    return input
+        .split("\n")
         .map((item) => item.trim())
         .filter(Boolean);
   }
 
-  if (field.key === "number_of_records") {
-    const number = Number(text);
+  return input.trim();
+}
 
-    if (!Number.isFinite(number) || number < 0) {
-      throw new Error("Introduz um número válido de registos.");
-    }
-
-    return number;
+function getErrorMessage(data: any, fallback: string): string {
+  if (typeof data?.detail === "string") {
+    return data.detail;
   }
 
-  return text.trim();
-}
+  if (data?.detail?.message) {
+    const pending = data.detail.pending_fields;
 
-function hasValue(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
+    if (Array.isArray(pending) && pending.length > 0) {
+      return `${data.detail.message} Campos pendentes: ${pending.join(", ")}.`;
+    }
 
-function statusLabel(status: ReviewStatus): string {
-  if (status === "confirmed") return "Confirmado";
-  if (status === "rejected") return "Rejeitado";
-  return "Por rever";
-}
+    return data.detail.message;
+  }
 
-function StatusBadge({ status }: { status: ReviewStatus }) {
-  return (
-      <span className={`review-badge ${status}`}>
-      {statusLabel(status)}
-    </span>
-  );
+  return fallback;
 }
 
 function App() {
   const [url, setUrl] = useState("");
   const [ref, setRef] = useState("");
 
-  const [repositoryResult, setRepositoryResult] =
-      useState<RepositoryResponse | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
   const [selectedDatasetPath, setSelectedDatasetPath] = useState("");
 
   const [extraction, setExtraction] =
-      useState<ExtractionResponse | null>(null);
+      useState<ExtractionResult | null>(null);
 
-  const [reviews, setReviews] = useState<Record<string, FieldReview>>({});
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [editingValues, setEditingValues] =
+      useState<Partial<Record<MetadataFieldName, string>>>({});
 
   const [confirmation, setConfirmation] =
-      useState<ConfirmationResponse | null>(null);
+      useState<ConfirmationResult | null>(null);
+
+  const [croissant, setCroissant] =
+      useState<CroissantResult | null>(null);
 
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
   const [loading, setLoading] = useState(false);
-  const [reviewLoading, setReviewLoading] = useState<string | null>(null);
+  const [busyField, setBusyField] =
+      useState<MetadataFieldName | null>(null);
 
   const [ollamaAvailable, setOllamaAvailable] =
       useState<boolean | null>(null);
@@ -253,16 +279,21 @@ function App() {
 
   const [configuredModel, setConfiguredModel] = useState("Ollama");
 
+  // ==========================================================
+  // OLLAMA STATUS
+  // ==========================================================
+
   useEffect(() => {
     fetch(`${API_URL}/api/v1/ollama-status`)
-        .then((response) => {
-          if (!response.ok) throw new Error("Erro ao consultar Ollama");
-          return response.json();
-        })
-        .then((data) => {
+        .then(async (response) => {
+          const data = await response.json();
+
           setOllamaAvailable(data.available);
           setModelInstalled(data.model_installed);
-          setConfiguredModel(data.configured_model || "Ollama");
+
+          if (data.configured_model) {
+            setConfiguredModel(data.configured_model);
+          }
         })
         .catch(() => {
           setOllamaAvailable(false);
@@ -270,216 +301,579 @@ function App() {
         });
   }, []);
 
-  async function requestJson<T>(
-      endpoint: string,
-      body?: unknown,
-  ): Promise<T> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: body === undefined
-          ? undefined
-          : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+  // ==========================================================
+  // ANALYZE REPOSITORY
+  // ==========================================================
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(
-          typeof data.detail === "string"
-              ? data.detail
-              : `Erro na comunicação com o servidor (${response.status}).`,
-      );
-    }
-
-    return data as T;
-  }
-
-  async function analyzeRepository(event: FormEvent<HTMLFormElement>) {
+  async function analyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setLoading(true);
     setError("");
-    setRepositoryResult(null);
+    setSuccessMessage("");
+
+    setAnalysis(null);
     setExtraction(null);
     setConfirmation(null);
-    setReviews({});
-    setDrafts({});
+    setCroissant(null);
     setSelectedDatasetPath("");
+    setEditingValues({});
 
     try {
-      const data = await requestJson<RepositoryResponse>(
-          "/api/v1/analyze",
+      const response = await fetch(
+          `${API_URL}/api/v1/analyze`,
           {
-            url: url.trim(),
-            ...(ref.trim() ? { ref: ref.trim() } : {}),
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url,
+              ...(ref.trim() ? { ref: ref.trim() } : {}),
+            }),
           },
       );
 
-      setRepositoryResult(data);
+      const data = await response.json().catch(() => ({}));
 
-      if (data.dataset_candidates.length === 0) {
-        setError("Não foram encontrados candidatos a datasets.");
+      if (!response.ok) {
+        throw new Error(
+            getErrorMessage(data, "Não foi possível analisar o repositório."),
+        );
+      }
+
+      setAnalysis(data as AnalysisResult);
+
+      if (data.dataset_candidates?.length > 0) {
+        setSuccessMessage(
+            `Repositório analisado. Foram encontrados ${data.dataset_candidates.length} candidatos a datasets.`,
+        );
+      } else {
+        setSuccessMessage(
+            "Repositório analisado, mas não foram encontrados datasets suportados.",
+        );
       }
     } catch (err) {
       setError(
-          err instanceof Error ? err.message : "Erro inesperado na análise.",
+          err instanceof Error ? err.message : "Erro inesperado.",
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function extractSelectedDataset() {
+  // ==========================================================
+  // EXTRACT METADATA FROM SELECTED DATASET
+  // ==========================================================
+
+  async function extractDataset() {
     if (!selectedDatasetPath) {
       setError("Seleciona primeiro um dataset.");
       return;
     }
 
+    if (!ollamaAvailable || !modelInstalled) {
+      setError(
+          "O Ollama ou o modelo configurado não estão disponíveis.",
+      );
+      return;
+    }
+
     setLoading(true);
     setError("");
+    setSuccessMessage("");
+
     setExtraction(null);
     setConfirmation(null);
-    setReviews({});
-    setDrafts({});
+    setCroissant(null);
+    setEditingValues({});
 
     try {
-      const data = await requestJson<ExtractionResponse>(
-          "/api/v1/extract-dataset",
+      const response = await fetch(
+          `${API_URL}/api/v1/extract-dataset`,
           {
-            url: url.trim(),
-            ...(ref.trim() ? { ref: ref.trim() } : {}),
-            dataset_path: selectedDatasetPath,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url,
+              ...(ref.trim() ? { ref: ref.trim() } : {}),
+              dataset_path: selectedDatasetPath,
+            }),
           },
       );
 
-      setExtraction(data);
+      const data = await response.json().catch(() => ({}));
 
-      const initialDrafts: Record<string, string> = {};
-
-      for (const field of FIELD_CONFIG) {
-        const metadataField = data.metadata[field.key] as MetadataField;
-        const initialValue =
-            metadataField.value ?? metadataField.suggested_value;
-
-        initialDrafts[field.key] = getFieldText(initialValue);
+      if (!response.ok) {
+        throw new Error(
+            getErrorMessage(data, "Não foi possível extrair os metadados."),
+        );
       }
 
-      setDrafts(initialDrafts);
+      setExtraction(data as ExtractionResult);
+
+      setSuccessMessage(
+          "Dataset inspecionado. Revê agora as sugestões de metadados.",
+      );
     } catch (err) {
       setError(
-          err instanceof Error ? err.message : "Erro na extração dos metadados.",
+          err instanceof Error ? err.message : "Erro inesperado.",
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function submitReview(
-      fieldName: string,
-      review: FieldReview,
+  // ==========================================================
+  // REVIEW METADATA FIELD
+  // ==========================================================
+
+
+  async function reviewField(
+      fieldName: MetadataFieldName,
+      action: ReviewAction,
   ) {
-    if (!extraction) return;
-
-    setReviewLoading(fieldName);
-    setError("");
-
-    const updatedReviews = {
-      ...reviews,
-      [fieldName]: review,
-    };
-
-    try {
-      const data = await requestJson<ConfirmationResponse>(
-          "/api/v1/metadata/confirm",
-          {
-            metadata: extraction.metadata,
-            reviews: updatedReviews,
-          },
-      );
-
-      setReviews(updatedReviews);
-
-      setExtraction((previous) =>
-          previous
-              ? { ...previous, metadata: data.metadata }
-              : previous,
-      );
-
-      setConfirmation(data);
-
-      const updatedDrafts = { ...drafts };
-      for (const field of FIELD_CONFIG) {
-        const metadataField = data.metadata[field.key] as MetadataField;
-        const value = metadataField.value ?? metadataField.suggested_value;
-        updatedDrafts[field.key] = getFieldText(value);
-      }
-      setDrafts(updatedDrafts);
-    } catch (err) {
-      setError(
-          err instanceof Error ? err.message : "Não foi possível guardar a revisão.",
-      );
-    } finally {
-      setReviewLoading(null);
+    if (!extraction) {
+      return;
     }
-  }
 
-  async function acceptSuggestion(fieldName: string) {
-    await submitReview(fieldName, { action: "accept" });
-  }
+    const field = extraction.metadata[fieldName];
 
-  async function rejectSuggestion(fieldName: string) {
-    await submitReview(fieldName, { action: "reject" });
-  }
+    let editedValue: unknown = undefined;
 
-  async function editAndConfirm(field: (typeof FIELD_CONFIG)[number]) {
-    const text = drafts[field.key] ?? "";
+    if (action === "edit") {
+      const input =
+          editingValues[fieldName] ??
+          fieldToInput(fieldName, field.value);
 
-    try {
-      const value = parseFieldValue(text, field);
+      editedValue = parseFieldInput(fieldName, input);
 
-      if (!hasValue(value)) {
-        setError(`O campo "${field.label}" não pode ficar vazio.`);
+      if (
+          fieldName === "date_published" &&
+          typeof editedValue === "string" &&
+          editedValue > getTodayDate()
+      ) {
+        setError("A data de publicação não pode ser posterior à data de hoje.");
         return;
       }
 
-      await submitReview(field.key, {
-        action: "edit",
-        value,
+      if (isEmpty(editedValue)) {
+        setError(
+            `O campo "${FIELD_LABELS[fieldName]}" não pode ficar vazio.`,
+        );
+        return;
+      }
+    }
+
+    setBusyField(fieldName);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      const review = {
+        action,
+        ...(action === "edit" ? { value: editedValue } : {}),
+      };
+
+      const response = await fetch(
+          `${API_URL}/api/v1/metadata/confirm`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              metadata: extraction.metadata,
+              reviews: {
+                [fieldName]: review,
+              },
+            }),
+          },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (action === "edit" && response.status === 422) {
+          setExtraction((previous) => {
+            if (!previous) {
+              return previous;
+            }
+
+            return {
+              ...previous,
+              metadata: {
+                ...previous.metadata,
+                [fieldName]: {
+                  ...previous.metadata[fieldName],
+                  value: editedValue,
+                  status: "suggested",
+                },
+              },
+            };
+          });
+
+          setConfirmation(null);
+          setCroissant(null);
+        }
+
+        throw new Error(
+            getErrorMessage(data, "Não foi possível guardar a revisão."),
+        );
+      }
+
+      const result = data as ConfirmationResult;
+
+      setExtraction((previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          metadata: result.metadata,
+        };
       });
+
+      setConfirmation(result);
+
+      setEditingValues((previous) => ({
+        ...previous,
+        [fieldName]: fieldToInput(
+            fieldName,
+            result.metadata[fieldName].value,
+        ),
+      }));
+
+      setCroissant(null);
+
+      if (action === "accept") {
+        setSuccessMessage(
+            `Sugestão de "${FIELD_LABELS[fieldName]}" confirmada.`,
+        );
+      } else if (action === "edit") {
+        setSuccessMessage(
+            `Campo "${FIELD_LABELS[fieldName]}" editado e confirmado.`,
+        );
+      } else {
+        setSuccessMessage(
+            `Campo "${FIELD_LABELS[fieldName]}" rejeitado. Terás de o preencher ou resolver antes de gerar Croissant.`,
+        );
+      }
     } catch (err) {
       setError(
-          err instanceof Error ? err.message : "Valor inválido.",
+          err instanceof Error ? err.message : "Erro inesperado.",
       );
+    } finally {
+      setBusyField(null);
     }
   }
 
-  const pendingFields =
-      confirmation?.pending_fields ??
-      extraction?.metadata.missing_information ??
-      [];
+  // ==========================================================
+  // REQUIRED FIELD STATUS
+  // ==========================================================
 
-  const confirmedCount = extraction
-      ? FIELD_CONFIG.filter((field) => {
-        const metadataField = extraction.metadata[field.key] as MetadataField;
-        return metadataField.status === "confirmed";
-      }).length
-      : 0;
+  function getPendingFields(): MetadataFieldName[] {
+    if (!extraction) {
+      return [...REQUIRED_FIELDS];
+    }
+
+    return REQUIRED_FIELDS.filter((fieldName) => {
+      const field = extraction.metadata[fieldName];
+
+      return (
+          field.status !== "confirmed" ||
+          isEmpty(field.value)
+      );
+    });
+  }
+
+  const pendingFields = getPendingFields();
+
+  const canGenerateCroissant =
+      extraction !== null &&
+      pendingFields.length === 0 &&
+      !loading &&
+      busyField === null;
+
+  // ==========================================================
+  // GENERATE CROISSANT
+  // ==========================================================
+
+  async function generateCroissant() {
+    if (!extraction || pendingFields.length > 0) {
+      setError(
+          "Confirma todos os campos obrigatórios antes de gerar Croissant.",
+      );
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setSuccessMessage("");
+    setCroissant(null);
+
+    try {
+      const response = await fetch(
+          `${API_URL}/api/v1/croissant/generate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url,
+              ...(ref.trim() ? { ref: ref.trim() } : {}),
+              dataset_path: selectedDatasetPath,
+              metadata: extraction.metadata,
+            }),
+          },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+            getErrorMessage(data, "Não foi possível gerar o Croissant."),
+        );
+      }
+
+      setCroissant(data as CroissantResult);
+
+      setSuccessMessage(
+          "Croissant gerado e validado com sucesso!",
+      );
+    } catch (err) {
+      setError(
+          err instanceof Error ? err.message : "Erro inesperado.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ==========================================================
+  // DOWNLOAD CROISSANT JSON-LD
+  // ==========================================================
+
+  function downloadCroissant() {
+    if (!croissant) {
+      return;
+    }
+
+    const json = JSON.stringify(
+        croissant.croissant,
+        null,
+        2,
+    );
+
+    const blob = new Blob(
+        [json],
+        { type: "application/ld+json;charset=utf-8" },
+    );
+
+    const downloadUrl = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = croissant.filename || "croissant.json";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(downloadUrl);
+  }
+
+  // ==========================================================
+  // METADATA FIELD RENDERING
+  // ==========================================================
+
+  function renderMetadataField(
+      fieldName: MetadataFieldName,
+      required = false,
+  ) {
+    if (!extraction) {
+      return null;
+    }
+
+    const field = extraction.metadata[fieldName];
+
+    if (!field) {
+      return null;
+    }
+
+    const fieldBusy = busyField === fieldName;
+
+    const inputValue =
+        editingValues[fieldName] ??
+        fieldToInput(fieldName, field.value);
+
+    const hasSuggestion = !isEmpty(field.suggested_value);
+
+    const statusLabel =
+        field.status === "confirmed"
+            ? "Confirmado"
+            : field.status === "rejected"
+                ? "Rejeitado"
+                : "Por confirmar";
+
+    const statusClass =
+        field.status === "confirmed"
+            ? "status-found"
+            : field.status === "rejected"
+                ? "status-missing"
+                : "status-pending";
+
+    return (
+        <article
+            className="metadata-field"
+            key={fieldName}
+        >
+          <div className="field-header">
+            <strong>
+              {FIELD_LABELS[fieldName]}
+              {required ? " *" : ""}
+            </strong>
+
+            <span className={statusClass}>
+            {statusLabel}
+          </span>
+          </div>
+
+          <p className="field-value">
+            {displayValue(field.value)}
+          </p>
+
+          {field.source && (
+              <p className="field-source">
+                Fonte: {field.source}
+              </p>
+          )}
+
+          {field.evidence && (
+              <details>
+                <summary>Ver evidência</summary>
+                <p>{field.evidence}</p>
+              </details>
+          )}
+
+          {!isEmpty(field.suggested_value) && (
+              <details>
+                <summary>Ver sugestão original da IA</summary>
+                <p>
+                  {displayValue(field.suggested_value)}
+                </p>
+              </details>
+          )}
+
+          {hasSuggestion && (
+              <p className="field-confidence">
+                Confiança estimada:{" "}
+                {(field.confidence * 100).toFixed(0)}%
+              </p>
+          )}
+
+          <label>
+            {fieldName === "creators" || fieldName === "keywords"
+                ? "Um valor por linha"
+                : "Editar valor"}
+          </label>
+
+          {fieldName === "date_published" ? (
+              <input
+                  className="field-editor"
+                  type="date"
+                  max={getTodayDate()}
+                  value={inputValue}
+                  onChange={(event) =>
+                      setEditingValues((previous) => ({
+                        ...previous,
+                        [fieldName]: event.target.value,
+                      }))
+                  }
+                  disabled={fieldBusy || loading}
+              />
+          ) : (
+              <textarea
+                  className="field-editor"
+                  rows={fieldName === "description" ? 4 : 2}
+                  value={inputValue}
+                  onChange={(event) =>
+                      setEditingValues((previous) => ({
+                        ...previous,
+                        [fieldName]: event.target.value,
+                      }))
+                  }
+                  placeholder={`Introduz ${FIELD_LABELS[fieldName].toLowerCase()}`}
+                  disabled={fieldBusy || loading}
+              />
+          )}
+
+          <div className="field-actions">
+            <button
+                type="button"
+                onClick={() => void reviewField(fieldName, "accept")}
+                disabled={
+                    fieldBusy ||
+                    loading ||
+                    !hasSuggestion
+                }
+            >
+              Aceitar sugestão
+            </button>
+
+            <button
+                type="button"
+                onClick={() => void reviewField(fieldName, "edit")}
+                disabled={fieldBusy || loading}
+            >
+              Confirmar edição
+            </button>
+
+            <button
+                type="button"
+                onClick={() => void reviewField(fieldName, "reject")}
+                disabled={fieldBusy || loading}
+            >
+              Rejeitar
+            </button>
+          </div>
+        </article>
+    );
+  }
+
+  // ==========================================================
+  // USER INTERFACE
+  // ==========================================================
 
   return (
       <main className="page">
+
+        {/* HEADER */}
+
         <header className="hero">
-          <p className="eyebrow">AI DATASET CURATION</p>
+          <p className="eyebrow">
+            AI DATASET CURATION
+          </p>
+
           <h1>Zenodo Metadata Assistant</h1>
+
           <p className="subtitle">
-            Transforma repositórios GitHub em metadados estruturados
-            para datasets de Machine Learning.
+            Transforma repositórios GitHub em metadados
+            estruturados para datasets de Machine Learning.
           </p>
         </header>
+
+        {/* OLLAMA STATUS */}
 
         <section className="status-panel">
           <div>
             <span className="status-label">Ollama</span>
+
             <strong>
               {ollamaAvailable === null
                   ? "A verificar..."
@@ -490,12 +884,8 @@ function App() {
           </div>
 
           <div>
-            <span className="status-label">Modelo configurado</span>
-            <strong>{configuredModel}</strong>
-          </div>
+            <span className="status-label">{configuredModel}</span>
 
-          <div>
-            <span className="status-label">Estado do modelo</span>
             <strong>
               {modelInstalled === null
                   ? "A verificar..."
@@ -506,11 +896,15 @@ function App() {
           </div>
         </section>
 
-        <section className="panel">
-          <form onSubmit={analyzeRepository}>
-            <h2>1. Analisar repositório</h2>
+        {/* REPOSITORY FORM */}
 
-            <label htmlFor="repo-url">URL do repositório GitHub</label>
+        <section className="panel">
+          <form onSubmit={analyze}>
+
+            <label htmlFor="repo-url">
+              URL do repositório GitHub
+            </label>
+
             <input
                 id="repo-url"
                 type="url"
@@ -523,6 +917,7 @@ function App() {
             <label htmlFor="repo-ref">
               Branch, tag ou commit (opcional)
             </label>
+
             <input
                 id="repo-ref"
                 type="text"
@@ -534,41 +929,57 @@ function App() {
 
             <div className="form-footer">
               <p className="hint">
-                Primeiro identificamos os ficheiros e os datasets disponíveis.
+                Primeiro analisamos o repositório.
+                Depois poderás escolher o dataset que pretendes utilizar.
               </p>
 
               <button
                   type="submit"
-                  disabled={
-                      loading ||
-                      !ollamaAvailable ||
-                      !modelInstalled ||
-                      !url.trim()
-                  }
+                  disabled={loading || !url.trim()}
               >
-                {loading ? "A analisar..." : "Analisar repositório"}
+                {loading
+                    ? "A analisar..."
+                    : "Analisar repositório"}
               </button>
             </div>
+
           </form>
         </section>
 
+        {/* MESSAGES */}
+
         {error && (
             <section className="message error">
-              <strong>Ocorreu um problema</strong>
+              <strong>Ocorreu um erro</strong>
               <p>{error}</p>
             </section>
         )}
 
-        {repositoryResult && (
+        {successMessage && (
+            <section className="message success">
+              <p>{successMessage}</p>
+            </section>
+        )}
+
+        {/* REPOSITORY ANALYSIS */}
+
+        {analysis && (
             <>
               <section className="panel">
-                <p className="eyebrow">REPOSITÓRIO ANALISADO</p>
-                <h2>{repositoryResult.repository.full_name}</h2>
 
-                <p>{repositoryResult.repository.description}</p>
+                <p className="eyebrow">
+                  REPOSITÓRIO ANALISADO
+                </p>
+
+                <h2>{analysis.repository.full_name}</h2>
+
+                <p>
+                  {analysis.repository.description ||
+                      "Sem descrição no GitHub."}
+                </p>
 
                 <a
-                    href={repositoryResult.repository.url}
+                    href={analysis.repository.url}
                     target="_blank"
                     rel="noreferrer"
                 >
@@ -576,369 +987,402 @@ function App() {
                 </a>
 
                 <div className="details">
-                  <span>Branch</span>
-                  <strong>{repositoryResult.repository.selected_ref}</strong>
+                  <span>Branch / referência</span>
+                  <strong>{analysis.repository.selected_ref}</strong>
 
                   <span>Commit</span>
                   <strong className="hash">
-                    {repositoryResult.repository.commit_sha}
+                    {analysis.repository.commit_sha}
                   </strong>
 
                   <span>Licença GitHub</span>
                   <strong>
-                    {repositoryResult.repository.license || "Não identificada"}
+                    {analysis.repository.license || "Não identificada"}
                   </strong>
                 </div>
+
               </section>
 
+              {/* INVENTORY */}
+
               <section className="stats">
+
                 <article className="stat">
-                  <strong>{repositoryResult.inventory.total_files}</strong>
+                  <strong>{analysis.inventory.total_files}</strong>
                   <span>Ficheiros</span>
                 </article>
 
                 <article className="stat">
-                  <strong>{repositoryResult.inventory.metadata_files_read}</strong>
+                  <strong>{analysis.inventory.metadata_files_read}</strong>
                   <span>Metadados lidos</span>
                 </article>
 
                 <article className="stat">
                   <strong>
-                    {repositoryResult.inventory.dataset_candidates_found}
+                    {analysis.inventory.dataset_candidates_found}
                   </strong>
                   <span>Candidatos a datasets</span>
                 </article>
+
               </section>
 
-              <section className="panel">
-                <p className="eyebrow">DATASET SELECTION</p>
-                <h2>2. Selecionar dataset</h2>
+              {/* DATASET SELECTION */}
 
-                <p className="hint">
-                  Escolhe o ficheiro que queres inspecionar e descrever.
+              <section className="panel">
+
+                <p className="eyebrow">
+                  DATASET SELECTION
                 </p>
 
-                <div className="dataset-list">
-                  {repositoryResult.dataset_candidates.map((dataset) => (
-                      <label
-                          className={`dataset-option ${
-                              selectedDatasetPath === dataset.path ? "selected" : ""
-                          }`}
-                          key={dataset.path}
-                      >
-                        <input
-                            type="radio"
-                            name="dataset"
-                            value={dataset.path}
-                            checked={selectedDatasetPath === dataset.path}
-                            onChange={() => setSelectedDatasetPath(dataset.path)}
-                        />
-
-                        <span className="dataset-option-content">
-                    <strong>{dataset.path}</strong>
-                    <small>
-                      {dataset.extension} ·{" "}
-                      {dataset.size.toLocaleString()} bytes ·{" "}
-                      Confiança: {dataset.confidence}
-                    </small>
-                  </span>
-                      </label>
-                  ))}
-                </div>
-
-                <div className="form-footer">
-                  <p className="hint">
-                    A extração é feita apenas para o dataset selecionado.
-                  </p>
-
-                  <button
-                      type="button"
-                      disabled={loading || !selectedDatasetPath}
-                      onClick={extractSelectedDataset}
-                  >
-                    {loading ? "A extrair..." : "Inspecionar e extrair metadados"}
-                  </button>
-                </div>
-              </section>
-            </>
-        )}
-
-        {extraction && (
-            <>
-              <section className="panel">
-                <p className="eyebrow">SELECTED DATASET</p>
-                <h2>Dataset selecionado</h2>
-
-                <div className="details">
-                  <span>Ficheiro</span>
-                  <strong>{extraction.selected_dataset.path}</strong>
-
-                  <span>Formato</span>
-                  <strong>{extraction.selected_dataset.format}</strong>
-
-                  <span>Registos</span>
-                  <strong>{extraction.selected_dataset.number_of_records}</strong>
-
-                  <span>Colunas</span>
-                  <strong>{extraction.selected_dataset.number_of_columns}</strong>
-
-                  <span>Codificação</span>
-                  <strong>{extraction.selected_dataset.encoding}</strong>
-                </div>
-
-                <h3>Estrutura das colunas</h3>
-                <div className="table-wrapper">
-                  <table className="inspection-table">
-                    <thead>
-                    <tr>
-                      <th>Coluna</th>
-                      <th>Tipo</th>
-                      <th>Valores em falta</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {extraction.selected_dataset.columns.map((column) => (
-                        <tr key={column.name}>
-                          <td>{column.name}</td>
-                          <td>{column.inferred_type}</td>
-                          <td>{column.missing_values}</td>
-                        </tr>
-                    ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section className="panel">
-                <p className="eyebrow">HUMAN METADATA REVIEW</p>
-                <h2>3. Rever metadados</h2>
+                <h2>Selecionar dataset</h2>
 
                 <p className="hint">
-                  Analisa as sugestões, consulta as evidências e decide
-                  se queres aceitar, editar ou rejeitar cada valor.
-                  Nenhuma sugestão é confirmada automaticamente.
+                  Escolhe o ficheiro que pretendes inspecionar
+                  e utilizar para gerar os metadados Croissant.
                 </p>
 
-                <div className="review-progress">
-                  <div>
-                    <strong>{confirmedCount} / {FIELD_CONFIG.length}</strong>
-                    <span>Campos confirmados</span>
-                  </div>
-                  <div>
-                    <strong>{pendingFields.length}</strong>
-                    <span>Campos obrigatórios pendentes</span>
-                  </div>
-                </div>
-
-                <div className="metadata-grid">
-                  {FIELD_CONFIG.map((field) => {
-                    const metadataField =
-                        extraction.metadata[field.key] as MetadataField;
-
-                    const suggestion = metadataField.suggested_value;
-                    const currentValue = metadataField.value;
-
-                    const hasSuggestion = hasValue(suggestion);
-                    const isConfirmed = metadataField.status === "confirmed";
-
-                    return (
-                        <article className="metadata-field review-card" key={field.key}>
-                          <div className="field-header">
-                            <strong>{field.label}</strong>
-                            <StatusBadge status={metadataField.status} />
-                          </div>
-
-                          {field.required && (
-                              <span className="required-label">
-                        Campo obrigatório
-                      </span>
-                          )}
-
-                          <div className="suggestion-box">
-                      <span className="field-label">
-                        {isConfirmed ? "Valor confirmado" : "Sugestão da IA"}
-                      </span>
-
-                            <p className="field-value">
-                              {hasValue(currentValue)
-                                  ? getFieldText(currentValue)
-                                  : "Não identificado"}
-                            </p>
-                          </div>
-
-                          {metadataField.source && (
-                              <p className="field-source">
-                                Fonte: {metadataField.source}
-                              </p>
-                          )}
-
-                          {metadataField.evidence && (
-                              <details>
-                                <summary>Consultar evidência</summary>
-                                <p>{metadataField.evidence}</p>
-                              </details>
-                          )}
-
-                          {hasSuggestion && (
-                              <p className="field-confidence">
-                                Confiança estimada:{" "}
-                                {(metadataField.confidence * 100).toFixed(0)}%
-                              </p>
-                          )}
-
-                          <label htmlFor={`field-${field.key}`}>
-                            {field.list
-                                ? "Editar valores (um por linha)"
-                                : "Editar valor"}
-                          </label>
-
-                          {field.multiline ? (
-                              <textarea
-                                  id={`field-${field.key}`}
-                                  rows={3}
-                                  value={drafts[field.key] ?? ""}
-                                  onChange={(event) =>
-                                      setDrafts((previous) => ({
-                                        ...previous,
-                                        [field.key]: event.target.value,
-                                      }))
-                                  }
-                                  placeholder="Introduz o valor..."
-                              />
-                          ) : (
-                              <input
-                                  id={`field-${field.key}`}
-                                  type="text"
-                                  value={drafts[field.key] ?? ""}
-                                  onChange={(event) =>
-                                      setDrafts((previous) => ({
-                                        ...previous,
-                                        [field.key]: event.target.value,
-                                      }))
-                                  }
-                                  placeholder="Introduz o valor..."
-                              />
-                          )}
-
-                          <div className="review-actions">
-                            <button
-                                type="button"
-                                className="button-accept"
-                                disabled={
-                                    reviewLoading !== null ||
-                                    !hasSuggestion ||
-                                    isConfirmed
-                                }
-                                onClick={() => acceptSuggestion(field.key)}
-                            >
-                              Aceitar
-                            </button>
-
-                            <button
-                                type="button"
-                                className="button-edit"
-                                disabled={reviewLoading !== null}
-                                onClick={() => editAndConfirm(field)}
-                            >
-                              Confirmar edição
-                            </button>
-
-                            <button
-                                type="button"
-                                className="button-reject"
-                                disabled={
-                                    reviewLoading !== null ||
-                                    metadataField.status === "rejected"
-                                }
-                                onClick={() => rejectSuggestion(field.key)}
-                            >
-                              Rejeitar
-                            </button>
-                          </div>
-
-                          {reviewLoading === field.key && (
-                              <p className="hint">A guardar revisão...</p>
-                          )}
-
-                          {field.required &&
-                              !hasSuggestion &&
-                              !hasValue(currentValue) && (
-                                  <p className="field-warning">
-                                    Este campo obrigatório precisa de um valor
-                                    fornecido pelo utilizador.
-                                  </p>
-                              )}
-                        </article>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {confirmation && (
-                  <section className="panel">
-                    <p className="eyebrow">REVIEW SUMMARY</p>
-                    <h2>4. Estado da confirmação</h2>
-
+                {analysis.dataset_candidates.length === 0 ? (
                     <p>
-                      {confirmation.can_generate_croissant
-                          ? "Todos os campos obrigatórios estão confirmados."
-                          : "Ainda existem campos obrigatórios por resolver."}
+                      Não foram encontrados candidatos a datasets.
                     </p>
+                ) : (
+                    <>
+                      <label htmlFor="dataset-select">
+                        Dataset disponível
+                      </label>
 
-                    {confirmation.pending_fields.length > 0 && (
-                        <>
-                          <h3>Campos pendentes</h3>
-                          <ul>
-                            {confirmation.pending_fields.map((field) => (
-                                <li key={field}>{field}</li>
-                            ))}
-                          </ul>
-                        </>
-                    )}
+                      <select
+                          id="dataset-select"
+                          value={selectedDatasetPath}
+                          onChange={(event) => {
+                            setSelectedDatasetPath(event.target.value);
+                            setExtraction(null);
+                            setConfirmation(null);
+                            setCroissant(null);
+                          }}
+                          disabled={loading}
+                      >
+                        <option value="">
+                          Seleciona um ficheiro...
+                        </option>
 
-                    {confirmation.rejected_fields.length > 0 && (
-                        <>
-                          <h3>Campos rejeitados</h3>
-                          <ul>
-                            {confirmation.rejected_fields.map((field) => (
-                                <li key={field}>{field}</li>
-                            ))}
-                          </ul>
-                        </>
-                    )}
+                        {analysis.dataset_candidates.map((file) => (
+                            <option
+                                key={file.path}
+                                value={file.path}
+                            >
+                              {file.path} — {file.extension} —{" "}
+                              {file.size.toLocaleString()} bytes
+                            </option>
+                        ))}
+                      </select>
 
-                    {confirmation.can_generate_croissant && (
-                        <div className="message success">
-                          <strong>Revisão concluída.</strong>
-                          <p>
-                            Os metadados estão prontos para a próxima etapa:
-                            geração do ficheiro Croissant.
+                      {selectedDatasetPath && (
+                          <div className="form-footer">
+                            <p className="hint">
+                              O ficheiro será inspecionado antes da extração.
+                            </p>
+
+                            <button
+                                type="button"
+                                onClick={() => void extractDataset()}
+                                disabled={
+                                    loading ||
+                                    !ollamaAvailable ||
+                                    !modelInstalled
+                                }
+                            >
+                              {loading
+                                  ? "A inspecionar e extrair..."
+                                  : "Inspecionar e extrair metadados"}
+                            </button>
+                          </div>
+                      )}
+
+                      {(!ollamaAvailable || !modelInstalled) && (
+                          <p className="hint">
+                            É necessário ter o Ollama e o modelo configurado
+                            disponíveis para extrair metadados.
                           </p>
-                        </div>
-                    )}
+                      )}
+                    </>
+                )}
 
-                    {!confirmation.can_generate_croissant && (
-                        <p className="hint">
-                          Para continuar, resolve os campos obrigatórios
-                          indicados acima.
-                        </p>
-                    )}
+              </section>
+
+              {/* ANALYSIS WARNINGS */}
+
+              {analysis.warnings.length > 0 && (
+                  <section className="message warning">
+                    <h2>Avisos da análise</h2>
+
+                    <ul>
+                      {analysis.warnings.map((warning, index) => (
+                          <li key={index}>{warning}</li>
+                      ))}
+                    </ul>
                   </section>
               )}
             </>
         )}
 
-        {repositoryResult?.warnings &&
-            repositoryResult.warnings.length > 0 && (
-                <section className="message warning">
-                  <h2>Avisos da análise</h2>
-                  <ul>
-                    {repositoryResult.warnings.map((warning, index) => (
-                        <li key={`${index}-${warning}`}>{warning}</li>
-                    ))}
-                  </ul>
-                </section>
-            )}
+        {/* DATASET INSPECTION */}
+
+        {extraction && (
+            <>
+              <section className="panel">
+
+                <p className="eyebrow">
+                  DATASET INSPECTION
+                </p>
+
+                <h2>Inspeção do dataset</h2>
+
+                <p>
+                  <strong>Ficheiro:</strong>{" "}
+                  {extraction.selected_dataset.path}
+                </p>
+
+                <div className="details">
+                  <span>Formato</span>
+                  <strong>
+                    {extraction.selected_dataset.format}
+                  </strong>
+
+                  <span>Tamanho</span>
+                  <strong>
+                    {extraction.selected_dataset.size.toLocaleString()} bytes
+                  </strong>
+
+                  <span>Codificação</span>
+                  <strong>
+                    {extraction.selected_dataset.encoding}
+                  </strong>
+
+                  <span>Delimitador</span>
+                  <strong>
+                    {JSON.stringify(extraction.selected_dataset.delimiter)}
+                  </strong>
+
+                  <span>Número de registos</span>
+                  <strong>
+                    {extraction.selected_dataset.number_of_records}
+                  </strong>
+
+                  <span>Número de colunas</span>
+                  <strong>
+                    {extraction.selected_dataset.number_of_columns}
+                  </strong>
+                </div>
+
+                <h3>Colunas identificadas</h3>
+
+                <ul className="file-list">
+                  {extraction.selected_dataset.columns.map((column) => (
+                      <li key={column.name}>
+                        <strong>{column.name}</strong>
+
+                        <span className="field-status">
+                    {column.inferred_type} ·{" "}
+                          {column.missing_values} valores em falta
+                  </span>
+                      </li>
+                  ))}
+                </ul>
+
+              </section>
+
+              {/* METADATA REVIEW */}
+
+              <section className="panel">
+
+                <p className="eyebrow">
+                  HUMAN REVIEW
+                </p>
+
+                <h2>Revisão dos metadados</h2>
+
+                <p className="hint">
+                  A IA apresenta sugestões, mas és tu quem decide
+                  quais os valores que ficam confirmados.
+                  Podes aceitar, editar ou rejeitar cada campo.
+                </p>
+
+                <p className="hint">
+                  Os campos assinalados com * são obrigatórios
+                  para gerar o Croissant nesta aplicação.
+                </p>
+
+                <div className="metadata-grid">
+
+                  {renderMetadataField("title", true)}
+
+                  {renderMetadataField("description", true)}
+
+                  {renderMetadataField("creators", true)}
+
+                  {renderMetadataField("license", true)}
+
+                  {renderMetadataField("date_published", true)}
+
+                  {renderMetadataField("dataset_type", true)}
+
+                  {renderMetadataField("data_modality", true)}
+
+                  {renderMetadataField("keywords")}
+
+                  {renderMetadataField("machine_learning_task")}
+
+                  {renderMetadataField("language")}
+
+                  {renderMetadataField("number_of_records")}
+
+                </div>
+
+              </section>
+
+              {/* CONFIRMATION STATUS */}
+
+              <section className="panel missing-panel">
+
+                <p className="eyebrow">
+                  CONFIRMATION STATUS
+                </p>
+
+                <h2>Estado da confirmação</h2>
+
+                <p>
+                  Campos obrigatórios confirmados:{" "}
+                  <strong>
+                    {REQUIRED_FIELDS.length - pendingFields.length}
+                    {" / "}
+                    {REQUIRED_FIELDS.length}
+                  </strong>
+                </p>
+
+                {pendingFields.length === 0 ? (
+                    <p className="status-found">
+                      Todos os campos obrigatórios estão confirmados.
+                    </p>
+                ) : (
+                    <>
+                      <p>
+                        Ainda precisas de resolver os seguintes campos:
+                      </p>
+
+                      <ul>
+                        {pendingFields.map((field) => (
+                            <li key={field}>
+                              {FIELD_LABELS[field]}
+                              {extraction.metadata[field].status === "rejected"
+                                  ? " — rejeitado"
+                                  : " — por confirmar"}
+                            </li>
+                        ))}
+                      </ul>
+                    </>
+                )}
+
+                {confirmation?.rejected_fields &&
+                    confirmation.rejected_fields.length > 0 && (
+                        <p>
+                          Campos rejeitados:{" "}
+                          {confirmation.rejected_fields
+                              .map((field) => FIELD_LABELS[field as MetadataFieldName] || field)
+                              .join(", ")}
+                        </p>
+                    )}
+
+              </section>
+
+              {/* CROISSANT GENERATION */}
+
+              <section className="panel">
+
+                <p className="eyebrow">
+                  CROISSANT GENERATION
+                </p>
+
+                <h2>Gerar metadados Croissant</h2>
+
+                <p className="hint">
+                  O documento só pode ser gerado depois de confirmares
+                  os sete campos obrigatórios. O backend volta a inspecionar
+                  o dataset e valida o JSON-LD com mlcroissant.
+                </p>
+
+                <button
+                    type="button"
+                    onClick={() => void generateCroissant()}
+                    disabled={!canGenerateCroissant}
+                >
+                  {loading
+                      ? "A gerar Croissant..."
+                      : "Gerar Croissant"}
+                </button>
+
+                {!canGenerateCroissant && (
+                    <p className="hint">
+                      Confirma todos os campos obrigatórios para ativar
+                      a geração.
+                    </p>
+                )}
+
+              </section>
+            </>
+        )}
+
+        {/* CROISSANT RESULT */}
+
+        {croissant && (
+            <section className="panel">
+
+              <p className="eyebrow">
+                CROISSANT GENERATED
+              </p>
+
+              <h2>Croissant gerado com sucesso</h2>
+
+              <p className="status-found">
+                Documento validado com mlcroissant.
+              </p>
+
+              <div className="details">
+                <span>Ficheiro</span>
+                <strong>{croissant.filename}</strong>
+
+                <span>Formato</span>
+                <strong>{croissant.format}</strong>
+
+                <span>Repositório</span>
+                <strong>{croissant.repository}</strong>
+
+                <span>Dataset</span>
+                <strong>{croissant.selected_dataset}</strong>
+
+                <span>Validação</span>
+                <strong>
+                  {croissant.validated ? "Aprovada" : "Não validado"}
+                </strong>
+              </div>
+
+              <button
+                  type="button"
+                  onClick={downloadCroissant}
+                  disabled={!croissant.validated}
+              >
+                Descarregar croissant.json
+              </button>
+
+              <h3>Pré-visualização JSON-LD</h3>
+
+              <pre className="croissant-preview">
+            {JSON.stringify(croissant.croissant, null, 2)}
+          </pre>
+
+            </section>
+        )}
+
       </main>
   );
 }
