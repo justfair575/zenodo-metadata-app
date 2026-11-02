@@ -237,3 +237,217 @@ pre {
     margin-bottom: 10px;
   }
 }
+
+
+/* Dataset selection */
+
+.dataset-list {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.dataset-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dce1e8;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.dataset-option:hover,
+.dataset-option.selected {
+  border-color: #5278d8;
+  background: #f5f8ff;
+}
+
+.dataset-option input {
+  margin-top: 4px;
+  width: auto;
+}
+
+.dataset-option-content {
+  display: grid;
+  gap: 5px;
+}
+
+.dataset-option-content small {
+  color: #697386;
+}
+
+/* Review cards */
+
+.review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.review-badge {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.review-badge.suggested {
+  color: #805b12;
+  background: #fff3d5;
+}
+
+.review-badge.confirmed {
+  color: #176b42;
+  background: #dcf5e7;
+}
+
+.review-badge.rejected {
+  color: #a12e36;
+  background: #fde5e5;
+}
+
+.required-label {
+  color: #a12e36;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.suggestion-box {
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #697386;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.review-card textarea,
+.review-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid #dce1e8;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.review-card textarea {
+  resize: vertical;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-actions button {
+  flex: 1;
+  min-width: 110px;
+}
+
+.review-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button-accept {
+  background: #238653;
+  color: white;
+}
+
+.button-edit {
+  background: #315eb8;
+  color: white;
+}
+
+.button-reject {
+  background: #a83e46;
+  color: white;
+}
+
+.field-warning {
+  color: #a12e36;
+  font-size: 13px;
+}
+
+.review-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 16px;
+  margin: 20px 0;
+  background: #f5f7fa;
+  border-radius: 10px;
+}
+
+.review-progress div {
+  display: grid;
+  gap: 4px;
+}
+
+.review-progress strong {
+  font-size: 22px;
+}
+
+.review-progress span {
+  color: #697386;
+  font-size: 13px;
+}
+
+/* Dataset inspection */
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.inspection-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.inspection-table th,
+.inspection-table td {
+  padding: 11px;
+  text-align: left;
+  border-bottom: 1px solid #e3e7ed;
+}
+
+.inspection-table th {
+  color: #697386;
+  font-size: 13px;
+}
+
+.message.success {
+  padding: 16px;
+  margin-top: 16px;
+  border-radius: 10px;
+  background: #e5f6eb;
+  color: #176b42;
+}
+
+@media (max-width: 650px) {
+  .review-actions {
+    flex-direction: column;
+  }
+
+  .review-actions button {
+    width: 100%;
+  }
+
+  .review-progress {
+    gap: 16px;
+  }
+}
+
