@@ -1,4 +1,3 @@
-
 import base64
 import binascii
 import httpx
@@ -9,6 +8,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.github_service import (
     AnalyzeRequest,
@@ -38,6 +38,12 @@ from app.metadata_review import apply_metadata_reviews
 from app.metadata_validation import validate_metadata_field
 
 from app.croissant_generator import build_croissant
+
+from app.orcid_service import (
+    create_orcid_authorization_url,
+    consume_orcid_state,
+    exchange_orcid_authorization_code,
+)
 
 
 # ============================================================
@@ -471,7 +477,7 @@ async def generate_croissant_endpoint(
     #     É eliminada automaticamente no final do pedido.
 
     with tempfile.TemporaryDirectory(
-            prefix="gg_ads_croissant_",
+            prefix="zenodo_metadata_croissant_",
     ) as temp_dir:
 
         dataset_directory = Path(temp_dir).resolve()
@@ -533,3 +539,75 @@ async def generate_croissant_endpoint(
             "selected_dataset": dataset_info["path"],
             "croissant": croissant,
         }
+
+# ============================================================
+# ORCID OAUTH
+# ============================================================
+
+@app.get("/api/v1/orcid/authorize")
+async def orcid_authorize():
+    """Inicia a autenticação ORCID e redireciona para o Sandbox."""
+
+    authorization_url = create_orcid_authorization_url()
+    return RedirectResponse(
+        url=authorization_url,
+        status_code=302,
+    )
+
+
+@app.get("/api/v1/orcid/callback")
+async def orcid_callback(
+        code: str | None = None,
+        state: str | None = None,
+        error: str | None = None,
+):
+    """Recebe o retorno OAuth da ORCID e troca o código por um token."""
+
+    if error:
+        if state:
+            consume_orcid_state(state)
+        raise HTTPException(
+            status_code=400,
+            detail="A autorização ORCID foi cancelada ou recusada.",
+        )
+
+    if not code or not state:
+        raise HTTPException(
+            status_code=400,
+            detail="A resposta ORCID não contém o código e o state necessários.",
+        )
+
+    try:
+        result = await exchange_orcid_authorization_code(
+            code=code,
+            state=state,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Não foi possível concluir a autenticação com a ORCID. "
+                "Confirma a ligação e as credenciais configuradas."
+            ),
+        ) from exc
+
+    return {
+        "status": "authenticated",
+        "message": "Identidade ORCID autenticada com sucesso.",
+        "creator": {
+            "creator_type": "person",
+            "name": result["name"],
+            "orcid_id": result["orcid"],
+        },
+        # Token opaco da Zenodo Metadata App. Deve ser enviado no corpo
+        # de /api/v1/metadata/confirm e mantido apenas em memória no frontend.
+        # Não é o access token OAuth da ORCID.
+        "creator_session_token": result["creator_session_token"],
+        "scope": result.get("scope"),
+    }
+
