@@ -41,6 +41,8 @@ class ExtractedMetadata(BaseModel):
     creators: MetadataField = Field(default_factory=MetadataField)
     license: MetadataField = Field(default_factory=MetadataField)
 
+    date_published: MetadataField = Field(default_factory=MetadataField)
+
     keywords: MetadataField = Field(default_factory=MetadataField)
 
     dataset_type: MetadataField = Field(default_factory=MetadataField)

@@ -9,29 +9,21 @@ from app.metadata_schema import (
     MetadataField,
 )
 
+from app.metadata_validation import (
+    is_empty,
+    validate_metadata_field,
+)
 
-# Política atual da aplicação, mantida do metadata_extractor.py.
+
 REQUIRED_FIELDS = [
     "title",
     "description",
     "creators",
     "license",
+    "date_published",
     "dataset_type",
     "data_modality",
 ]
-
-
-def is_empty(value):
-    if value is None:
-        return True
-
-    if isinstance(value, str):
-        return not value.strip()
-
-    if isinstance(value, (list, dict)):
-        return len(value) == 0
-
-    return False
 
 
 def apply_metadata_reviews(
@@ -44,8 +36,6 @@ def apply_metadata_reviews(
 
         field = getattr(metadata, field_name)
 
-        # Nesta versão, os campos revistos individualmente
-        # são MetadataField.
         if not isinstance(field, MetadataField):
             raise HTTPException(
                 status_code=422,
@@ -63,8 +53,7 @@ def apply_metadata_reviews(
                     ),
                 )
 
-            field.value = field.suggested_value
-            field.status = "confirmed"
+            value_to_validate = field.suggested_value
 
         elif review.action == "edit":
 
@@ -77,13 +66,40 @@ def apply_metadata_reviews(
                     ),
                 )
 
-            field.value = review.value
-            field.status = "confirmed"
+            value_to_validate = review.value
 
         elif review.action == "reject":
 
             field.value = None
             field.status = "rejected"
+            continue
+
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Ação de revisão inválida: {review.action}",
+            )
+
+        validation_errors = validate_metadata_field(
+            field_name,
+            value_to_validate,
+        )
+
+        if validation_errors:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": (
+                        f"O valor introduzido no campo "
+                        f"'{field_name}' não é válido."
+                    ),
+                    "field": field_name,
+                    "errors": validation_errors,
+                },
+            )
+
+        field.value = value_to_validate
+        field.status = "confirmed"
 
     pending_fields = []
     rejected_fields = []
